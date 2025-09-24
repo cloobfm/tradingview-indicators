@@ -116,6 +116,9 @@ varip bullHistory = array.new_float()
 varip bearHistory = array.new_float()
 varip timeHistory = array.new_int()
 
+// Label management variables
+var array<label> persistentLabels = array.new<label>()
+
 // Get price, volume, and time from a 1 second chart.
 tf = acct == act1 ? "1" : "1S"
 [ltf_p, ltf_v, ltf_t] = request.security_lower_tf(syminfo.tickerid, tf, [close, volume, timenow])
@@ -376,46 +379,50 @@ for Fewer_Performance_Penalties_Over_Time = 0 to 0
         tape.cell(0, invertTape ? tlen1 : metricOffset, "", height=1, text_color=none, bgcolor=none)
         metricOffset += 1
 
-        // Plot large orders on the main chart if enabled
-        if enablePlot and barstate.isrealtime and newVolume
-            for i = 0 to priceArr - 1
-                v = vol.get(i)
-                if v >= threshold
-                    p1 = price.get(i)
-                    
-                    // Calculate direction based on price comparison with previous price
-                    // Determine the direction of the price movement that caused this volume
-                    bool isUpTick = na
-                    if i < priceArr - 1  // Make sure we don't go out of bounds
-                        p2 = price.get(i + 1)  // Previous price in the array
-                        pdir = p1 - p2
-                        isUpTick := pdir > 0 ? true : pdir < 0 ? false : na
-                    else
-                        // For the most recent price, compare with previous bar's close
-                        isUpTick := p1 > close[1] ? true : p1 < close[1] ? false : na
-                    
-                    // Determine dot size based on volume relative to threshold
-                    // Calculate relative volume to determine dot size
-                    relativeVolume = math.log(v / threshold + 1)  // Using log to make the size proportional but not too extreme
-                    
-                    // Create persistent labels with proper size based on volume
-                    labelSize = relativeVolume > 3.5 and maxDotSize == "huge" ? size.huge : 
-                              relativeVolume > 2.5 and maxDotSize != "tiny" and maxDotSize != "small" and maxDotSize != "normal" ? size.large : 
-                              relativeVolume > 1.5 and maxDotSize != "tiny" and maxDotSize != "small" ? size.normal : 
-                              size.small
-                    
-                    // Create the label with timestamp to make it persistent
-                    timeStamp = stamp.get(i)
-                    label.new(x=bar_index, y=p1, 
-                             text="", 
-                             style=label.style_circle, 
-                             color=isUpTick ? plotUpColor : plotDownColor, 
-                             size=labelSize,
-                             tooltip="Volume: " + str.tostring(v) + "\nPrice: " + str.tostring(p1) + "\nTime: " + str.format_time(timeStamp, "HH:mm:ss", syminfo.timezone))
-                    
-                    // Manage label count to prevent exceeding limits
-                    if array.size(label.all) > keepLabels
-                        label.delete(array.get(label.all, 0))
+        // Plot large orders on the main chart if enabled - create labels on confirmed volume only
+        if enablePlot and newVolume and vsize >= threshold
+            // Get current price and volume data independently of arrays
+            currentPrice = ltf_p.size() > 0 ? ltf_p.last() : close
+            currentVolume = vsize
+            currentTime = ltf_t.size() > 0 ? ltf_t.last() : timenow
+            
+            // Calculate direction based on price movement
+            bool isUpTick = na
+            if barstate.isconfirmed or barstate.islast
+                // Compare with previous close for direction
+                isUpTick := currentPrice > close[1] ? true : currentPrice < close[1] ? false : na
+            else
+                // For realtime, compare with recent price data if available
+                if priceArr > 1
+                    prevPrice = price.get(1) 
+                    isUpTick := currentPrice > prevPrice ? true : currentPrice < prevPrice ? false : na
+                else
+                    isUpTick := currentPrice > close[1] ? true : currentPrice < close[1] ? false : na
+            
+            // Determine dot size based on volume relative to threshold
+            relativeVolume = math.log(currentVolume / threshold + 1)
+            
+            // Create persistent labels with proper size based on volume
+            labelSize = relativeVolume > 3.5 and maxDotSize == "huge" ? size.huge : 
+                      relativeVolume > 2.5 and maxDotSize != "tiny" and maxDotSize != "small" and maxDotSize != "normal" ? size.large : 
+                      relativeVolume > 1.5 and maxDotSize != "tiny" and maxDotSize != "small" ? size.normal : 
+                      size.small
+            
+            // Create the persistent label independent of array management
+            newLabel = label.new(x=bar_index, y=currentPrice, 
+                     text="", 
+                     style=label.style_circle, 
+                     color=isUpTick ? plotUpColor : plotDownColor, 
+                     size=labelSize,
+                     tooltip="Volume: " + str.tostring(currentVolume, "#.##") + "\nPrice: " + str.tostring(currentPrice, "#.####") + "\nTime: " + str.format_time(currentTime, "HH:mm:ss", syminfo.timezone))
+            
+            // Add to our persistent labels array
+            array.push(persistentLabels, newLabel)
+            
+            // Manage label count to prevent exceeding limits - remove oldest labels first
+            if array.size(persistentLabels) > keepLabels
+                oldestLabel = array.shift(persistentLabels)
+                label.delete(oldestLabel)
 
         // Show column headers of tape.
         if shoh
