@@ -36,6 +36,14 @@ lSzc = input.color(clr3, "Large", inline=i2, group=g1, display=display.none)
 hdrc = input.color(clr6, "Header", inline=i2, group=g1, display=display.none)
 defc = input.color(clr6, "Default", "Cell / Row Colors", inline=i2, group=g1, display=display.none)
 
+// Large Order Visualization Settings
+const string g5 = "Large Order Visualization"
+enablePlot = input.bool(true, "Enable Large Order Plot", "Plot large orders as dots on main chart", group=g5)
+threshold = input.float(30, "Large Order Threshold", 1, step=1, tooltip="Minimum volume size to plot as a dot on the chart", group=g5)
+plotUpColor = input.color(color.green, "Up Tick Color", group=g5)
+plotDownColor = input.color(color.red, "Down Tick Color", group=g5)
+maxDotSize = input.string("large", "Max Dot Size", ["tiny", "small", "normal", "large", "huge"], "Maximum size of the plotted dot", group=g5)
+
 // Volume Metrics Settings
 const string g2 = "Bar Volume Metrics"
 vmPrsn = input.int(2, "Metric Precision", 0, 10, 1, tooltip="How many digits passed the decimal you would like to see, if the metric is not a whole number.", group=g2, display=display.none)
@@ -366,6 +374,39 @@ for Fewer_Performance_Penalties_Over_Time = 0 to 0
         // Visually separate metrics from the time and sales.
         tape.cell(0, invertTape ? tlen1 : metricOffset, "", height=1, text_color=none, bgcolor=none)
         metricOffset += 1
+
+        // Plot large orders on the main chart if enabled
+        if enablePlot and barstate.isrealtime and newVolume
+            for i = 0 to priceArr - 1
+                v = vol.get(i)
+                if v >= threshold
+                    p1 = price.get(i)
+                    
+                    // Calculate direction based on price comparison with previous price
+                    // Determine the direction of the price movement that caused this volume
+                    bool isUpTick = na
+                    if i < priceArr - 1  // Make sure we don't go out of bounds
+                        p2 = price.get(i + 1)  // Previous price in the array
+                        pdir = p1 - p2
+                        isUpTick := pdir > 0 ? true : pdir < 0 ? false : na
+                    else
+                        // For the most recent price, compare with previous bar's close
+                        isUpTick := p1 > close[1] ? true : p1 < close[1] ? false : na
+                    
+                    // Determine dot size based on volume relative to threshold
+                    // Calculate relative volume to determine dot size
+                    relativeVolume = math.log(v / threshold + 1)  // Using log to make the size proportional but not too extreme
+                    
+                    // Plot the dot on the main chart with size based on relative volume using label
+                    // Use conditional label creation to show different sized markers based on volume
+                    if relativeVolume > 3.5 and not (maxDotSize == "tiny" or maxDotSize == "small" or maxDotSize == "normal" or maxDotSize == "large")
+                        label.new(bar_index, p1, style=label.style_circle, color=isUpTick ? plotUpColor : plotDownColor, size=size.huge, text="")
+                    else if (relativeVolume > 2.5) and not (maxDotSize == "tiny" or maxDotSize == "small" or maxDotSize == "normal")
+                        label.new(bar_index, p1, style=label.style_circle, color=isUpTick ? plotUpColor : plotDownColor, size=size.large, text="")
+                    else if (relativeVolume > 1.5) and not (maxDotSize == "tiny" or maxDotSize == "small")
+                        label.new(bar_index, p1, style=label.style_circle, color=isUpTick ? plotUpColor : plotDownColor, size=size.normal, text="")
+                    else  // Default to small size or respect maxDotSize settings
+                        label.new(bar_index, p1, style=label.style_circle, color=isUpTick ? plotUpColor : plotDownColor, size=size.small, text="")
 
         // Show column headers of tape.
         if shoh
