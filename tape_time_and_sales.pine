@@ -7,7 +7,7 @@
 // More here: https://www.tradingview.com/script/vIDMwYuU-Tape-Time-and-Sales/
 
 //@version=5
-indicator("Tape (Time and Sales) - Enhanced", "Tape Enhanced", true, max_bars_back=0)
+indicator("Tape (Time and Sales) - Enhanced", "Tape Enhanced", true, max_bars_back=0, max_labels_count=500)
 
 
 
@@ -40,9 +40,10 @@ defc = input.color(clr6, "Default", "Cell / Row Colors", inline=i2, group=g1, di
 const string g5 = "Large Order Visualization"
 enablePlot = input.bool(true, "Enable Large Order Plot", "Plot large orders as dots on main chart", group=g5)
 threshold = input.float(30, "Large Order Threshold", 1, step=1, tooltip="Minimum volume size to plot as a dot on the chart", group=g5)
-plotUpColor = input.color(color.green, "Up Tick Color", group=g5)
-plotDownColor = input.color(color.red, "Down Tick Color", group=g5)
+plotUpColor = input.color(color.new(color.green, 75), "Up Tick Color", group=g5)
+plotDownColor = input.color(color.new(color.red, 75), "Down Tick Color", group=g5)
 maxDotSize = input.string("large", "Max Dot Size", ["tiny", "small", "normal", "large", "huge"], "Maximum size of the plotted dot", group=g5)
+keepLabels = input.int(100, "Max Labels to Keep", 10, 500, 1, "Maximum number of persistent labels to display", group=g5)
 
 // Volume Metrics Settings
 const string g2 = "Bar Volume Metrics"
@@ -397,16 +398,24 @@ for Fewer_Performance_Penalties_Over_Time = 0 to 0
                     // Calculate relative volume to determine dot size
                     relativeVolume = math.log(v / threshold + 1)  // Using log to make the size proportional but not too extreme
                     
-                    // Plot the dot on the main chart with size based on relative volume using label
-                    // Use conditional label creation to show different sized markers based on volume
-                    if relativeVolume > 3.5 and not (maxDotSize == "tiny" or maxDotSize == "small" or maxDotSize == "normal" or maxDotSize == "large")
-                        label.new(bar_index, p1, style=label.style_circle, color=isUpTick ? plotUpColor : plotDownColor, size=size.huge, text="")
-                    else if (relativeVolume > 2.5) and not (maxDotSize == "tiny" or maxDotSize == "small" or maxDotSize == "normal")
-                        label.new(bar_index, p1, style=label.style_circle, color=isUpTick ? plotUpColor : plotDownColor, size=size.large, text="")
-                    else if (relativeVolume > 1.5) and not (maxDotSize == "tiny" or maxDotSize == "small")
-                        label.new(bar_index, p1, style=label.style_circle, color=isUpTick ? plotUpColor : plotDownColor, size=size.normal, text="")
-                    else  // Default to small size or respect maxDotSize settings
-                        label.new(bar_index, p1, style=label.style_circle, color=isUpTick ? plotUpColor : plotDownColor, size=size.small, text="")
+                    // Create persistent labels with proper size based on volume
+                    labelSize = relativeVolume > 3.5 and maxDotSize == "huge" ? size.huge : 
+                              relativeVolume > 2.5 and maxDotSize != "tiny" and maxDotSize != "small" and maxDotSize != "normal" ? size.large : 
+                              relativeVolume > 1.5 and maxDotSize != "tiny" and maxDotSize != "small" ? size.normal : 
+                              size.small
+                    
+                    // Create the label with timestamp to make it persistent
+                    timeStamp = stamp.get(i)
+                    label.new(x=bar_index, y=p1, 
+                             text="", 
+                             style=label.style_circle, 
+                             color=isUpTick ? plotUpColor : plotDownColor, 
+                             size=labelSize,
+                             tooltip="Volume: " + str.tostring(v) + "\nPrice: " + str.tostring(p1) + "\nTime: " + str.format_time(timeStamp, "HH:mm:ss", syminfo.timezone))
+                    
+                    // Manage label count to prevent exceeding limits
+                    if array.size(label.all) > keepLabels
+                        label.delete(array.get(label.all, 0))
 
         // Show column headers of tape.
         if shoh
